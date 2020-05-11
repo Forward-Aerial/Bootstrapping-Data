@@ -1,2 +1,2 @@
 # Bootstrapping-Data
-Bootstrapping labeling using mediocre models
+Bootstrapping labeling using mediocre models.

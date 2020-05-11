@@ -1,0 +1,4 @@
+{
+    "python.pythonPath": "/home/quontas/.pyenv/versions/bootstrapping-data-3.8.2/bin/python",
+    "python.formatting.provider": "black"
+}
