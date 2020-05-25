@@ -1,0 +1,156 @@
+{
+    "licenses": [
+        {
+            "id": 0,
+            "url": "",
+            "name": ""
+        }
+    ],
+    "images": [],
+    "annotations": [],
+    "info": {
+        "url": "",
+        "contributor": "",
+        "version": "",
+        "description": "",
+        "year": "",
+        "date_created": ""
+    },
+    "categories": [
+        {
+            "id": 1,
+            "supercategory": "",
+            "name": "Bowser"
+        },
+        {
+            "id": 2,
+            "supercategory": "",
+            "name": "Captain Falcon"
+        },
+        {
+            "id": 3,
+            "supercategory": "",
+            "name": "Donkey Kong"
+        },
+        {
+            "id": 4,
+            "supercategory": "",
+            "name": "Dr. Mario"
+        },
+        {
+            "id": 5,
+            "supercategory": "",
+            "name": "Falco"
+        },
+        {
+            "id": 6,
+            "supercategory": "",
+            "name": "Fox"
+        },
+        {
+            "id": 7,
+            "supercategory": "",
+            "name": "Ganondorf"
+        },
+        {
+            "id": 8,
+            "supercategory": "",
+            "name": "Ice Climbers"
+        },
+        {
+            "id": 9,
+            "supercategory": "",
+            "name": "Jigglypuff"
+        },
+        {
+            "id": 10,
+            "supercategory": "",
+            "name": "Kirby"
+        },
+        {
+            "id": 11,
+            "supercategory": "",
+            "name": "Link"
+        },
+        {
+            "id": 12,
+            "supercategory": "",
+            "name": "Luigi"
+        },
+        {
+            "id": 13,
+            "supercategory": "",
+            "name": "Mario"
+        },
+        {
+            "id": 14,
+            "supercategory": "",
+            "name": "Marth"
+        },
+        {
+            "id": 15,
+            "supercategory": "",
+            "name": "Mewtwo"
+        },
+        {
+            "id": 16,
+            "supercategory": "",
+            "name": "Mr. Game & Watch"
+        },
+        {
+            "id": 17,
+            "supercategory": "",
+            "name": "Ness"
+        },
+        {
+            "id": 18,
+            "supercategory": "",
+            "name": "Peach"
+        },
+        {
+            "id": 19,
+            "supercategory": "",
+            "name": "Pichu"
+        },
+        {
+            "id": 20,
+            "supercategory": "",
+            "name": "Pikachu"
+        },
+        {
+            "id": 21,
+            "supercategory": "",
+            "name": "Roy"
+        },
+        {
+            "id": 22,
+            "supercategory": "",
+            "name": "Samus"
+        },
+        {
+            "id": 23,
+            "supercategory": "",
+            "name": "Sheik"
+        },
+        {
+            "id": 24,
+            "supercategory": "",
+            "name": "Yoshi"
+        },
+        {
+            "id": 25,
+            "supercategory": "",
+            "name": "Young Link"
+        },
+        {
+            "id": 26,
+            "supercategory": "",
+            "name": "Zelda"
+        },
+        {
+            "id": 27,
+            "supercategory": "",
+            "name": "CHARACTER"
+        }
+    ]
+}
