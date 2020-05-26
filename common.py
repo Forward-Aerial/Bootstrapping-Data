@@ -40,6 +40,7 @@ def area(minpt_wh: Tuple[float, float, float, float]):
     """
     return minpt_wh[2] * minpt_wh[3]
 
+
 def load_coco_data(annotation_path: str):
     with open(annotation_path, "r") as json_file:
         coco_data = json.load(json_file)
