@@ -1,20 +1,30 @@
 import argparse
+import getpass
 import glob
 import json
 import os
 import shutil
-from typing import Dict, List, NewType, Optional, Tuple
+from typing import Dict, Iterator, List, NewType, Optional, Tuple
+from io import BytesIO
+import time
 
+import requests
 import torch
 import torchvision
 from matplotlib import patches
 from matplotlib import pyplot as plt
 from PIL import Image
+from pycocotools.coco import COCO
 
 from common import area, load_coco_data, minpt_wh_to_points
 
 DEVICE = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 DEFAULT_TEMPLATE_LOCATION = "template.json"
+
+CVAT_SERVER_URL = "http://localhost:8080"
+API = "/api/v1"
+TASKS_PATH = "/tasks"
+TIME_TO_SLEEP_AFTER_UPLOAD = 10
 
 
 def move_images(image_dir: str) -> str:
@@ -88,28 +98,76 @@ def visualize_prediction(
     plt.close(fig)
 
 
-def add_annotation(fig, ax, annotation) -> None:
+def upload_to_cvat(
+    username: str,
+    passwd: str,
+    new_img_dir: str,
+    image_files: List[str],
+    annotation_filepath: str,
+    cvat_labels_filepath: str = "settings.json",
+) -> None:
+    create_task_url = CVAT_SERVER_URL + API + TASKS_PATH
 
-    [min_x, min_y, width, height] = annotation["bbox"]
-    category_id = annotation["category_id"]
+    label_data = json.load(open(cvat_labels_filepath, "r"))
+    task_name = new_img_dir.split("/")[-2]
+    create_task_body = {"name": task_name, "labels": label_data}
 
-    rect = patches.Rectangle(
-        (min_x, min_y), width, height, linewidth=1, edgecolor="g", facecolor="none"
+    create_task_response = requests.post(
+        create_task_url, json=create_task_body, auth=(username, passwd)
     )
-    ax.add_patch(rect)
-    ax.text(min_x, min_y, f"{category_id}", c="g")
-    fig.show()
+    assert create_task_response.ok
+    print(f"Task {task_name} was created successfully. Uploading images...")
+
+    create_task_json = create_task_response.json()
+    new_task_url = create_task_json["url"]
+    create_task_data_url = new_task_url + "/data"
+
+    create_task_data_body = {"name": task_name, "labels": label_data}
+    files = {}
+    for i, image_filepath in enumerate(image_files):
+        filename = image_filepath.split("/")[-1]
+        img_bytes = open(image_filepath, "rb")
+        files[f"client_files[{i}]"] = (filename, img_bytes)
+    create_task_data_body["image_quality"] = 70
+    create_task_data_response = requests.post(
+        create_task_data_url,
+        data=create_task_data_body,
+        auth=(username, passwd),
+        files=files,
+    )
+    assert create_task_data_response.ok
+    print(
+        f"{len(image_files)} images uploaded to {task_name}. Adding annotations after {TIME_TO_SLEEP_AFTER_UPLOAD} seconds for server to synchronize..."
+    )
+    time.sleep(TIME_TO_SLEEP_AFTER_UPLOAD)
+
+    upload_annotations_url = new_task_url + "/annotations?format=COCO 1.0"
+    coco_annotations_file_content = open(annotation_filepath, "rb")
+    upload_annotations_body = {
+        "annotation_file": ("instances_default.json", coco_annotations_file_content)
+    }
+    upload_annotations_response = requests.put(
+        upload_annotations_url, files=upload_annotations_body, auth=(username, passwd)
+    )
+    print(upload_annotations_response.text)
+    assert upload_annotations_response.ok
 
 
 def bootstrap(
-    root_dir: str, model_path: str, certainty: float, template_location: str,
+    root_dir: str,
+    model_path: str,
+    certainty: float,
+    template_location: str,
+    debug: bool,
 ) -> None:
     """
     Moves all of the images in `image_dir` into <image_dir>/images, and then uses the PyTorch model at `model_path` to automatically generate annotations for all of the images.
     Annotations will be stored in <image_dir>/annotations.
     """
     new_image_dir = move_images(root_dir)
-    image_files = glob.iglob(f"{new_image_dir}/*")
+    image_files = list(glob.iglob(f"{new_image_dir}/*"))
+    image_files = sorted([(int(x.split("/")[-1].split(".")[0]), x) for x in image_files], key=lambda x: x[0])
+    _, image_files = zip(*image_files)
     to_tensor = torchvision.transforms.ToTensor()
     annotation_id = 0
     images = []
@@ -136,33 +194,35 @@ def bootstrap(
                 "file_name": f"{image_id}.jpg",
             }
         )
-        # print("BOXES =", boxes)
-        # print("LABELS =", labels)
-        # print("SCORES = ", scores)
-        # visualize_prediction(img, boxes, labels, scores, certainty)
-        # fig, ax = plt.subplots(1, figsize=(12, 8))
-        # ax.imshow(img)
+        if debug:
+            print("BOXES =", boxes)
+            print("LABELS =", labels)
+            print("SCORES = ", scores)
+            visualize_prediction(img, boxes, labels, scores, certainty)
+            fig, ax = plt.subplots(1, figsize=(12, 8))
+            ax.imshow(img)
         for box, label, score in zip(boxes, labels, scores):
             annotation = construct_annotation(
                 image_id, annotation_id, box, label, score, certainty
             )
             if annotation is None:
                 continue
-            # add_annotation(fig, ax, annotation)
             annotations.append(annotation)
             annotation_id += 1
-        # fig.show()
-        # plt.waitforbuttonpress()
-        # plt.close(fig)
+        if debug:
+            fig.show()
+            plt.waitforbuttonpress()
+            plt.close(fig)
 
     licenses, _, info, categories, _ = load_coco_data(template_location)
 
     new_annotation_dir = os.path.join(root_dir, "annotations")
     if not os.path.exists(new_annotation_dir):
         os.mkdir(new_annotation_dir)
-    with open(
-        os.path.join(new_annotation_dir, "instances_default.json"), "w+"
-    ) as annotation_fp:
+    new_annotation_file_path = os.path.join(
+        new_annotation_dir, "instances_default.json"
+    )
+    with open(new_annotation_file_path, "w+") as annotation_fp:
         json.dump(
             {
                 "licenses": licenses,
@@ -173,6 +233,17 @@ def bootstrap(
             },
             annotation_fp,
         )
+
+    user_wants_to_upload = input(
+        "Would you like to upload the annotated dataset to CVAT? ([Y]/n) "
+    )
+    if user_wants_to_upload.lower() == "n":
+        return
+    username = input("What is your username on CVAT? ")
+    passwd = getpass.getpass("What is your password on CVAT? ")
+    upload_to_cvat(
+        username, passwd, new_image_dir, image_files, new_annotation_file_path
+    )
 
 
 if __name__ == "__main__":
@@ -197,5 +268,17 @@ if __name__ == "__main__":
         default=DEFAULT_TEMPLATE_LOCATION,
         help="The location of the Smash COCO template.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Whether to visualize predictions and output annotations.",
+    )
     args = parser.parse_args()
-    bootstrap(args.image_dir, args.model_path, args.certainty, args.template_location)
+    bootstrap(
+        args.image_dir,
+        args.model_path,
+        args.certainty,
+        args.template_location,
+        args.debug,
+    )

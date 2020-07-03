@@ -2,64 +2,56 @@
 Quick command-line tool to merge >= 2 COCO datasets together.
 """
 import argparse
+import copy
 import functools
 import json
 import logging
 import os
 import pathlib
+import shutil
 from typing import Dict, List, Tuple
 
 import skimage.io as io
 from matplotlib import pyplot as plt
+from PIL import Image
 from pycocotools.coco import COCO
+
+from common import add_annotation, load_dataset
 
 MIN_NUM_DATASETS = 2
 
 
-def load_dataset(dataset_path: str):
-    """
-    Loads a COCO dataset from a specific folder. Expects folder to be similar to:
-    <dir>/annotations/instances_default.json
-    <dir>/images/
-    """
-    annotation_filepath = os.path.join(
-        dataset_path, "annotations", "instances_default.json"
-    )
-    logging.debug(f"Attempting to open {annotation_filepath}.")
-    return COCO(annotation_filepath)
-
-
-def update_image(
-    start_id: int, old_img_dir: str, new_img_dir: str, image: Dict
+def copy_image(
+    new_img_id: int, old_img_dir: str, new_img_dir: str, old_img: Dict
 ) -> Dict:
     """
-    Moves an image from old_img_dir to new_img_dir. Updates the filename and ID to be offset from "start_id".
+    Moves an image from old_img_dir to new_img_dir. Updates the filename and ID to "new_img_id".
     """
-    logging.debug(f"Updating image entry: {image}.")
-    logging.debug(f"Image offset is {start_id}.")
-    old_filepath = os.path.join(old_img_dir, "images", f"{image['id']}.jpg")
-    image["id"] += start_id
-    new_filepath = os.path.join(new_img_dir, "images", f"{image['id']}.jpg")
-    os.rename(old_filepath, new_filepath)
-    image["file_name"] = f"{image['id']}.jpg"
-    logging.debug(f"Image entry updated, is now {image}")
-    return image
+    logging.debug(f"Updating image entry: {old_img}.")
+    logging.debug(f"New image ID is {new_img_id}.")
+    new_img = copy.deepcopy(old_img)
+    old_file_name = os.path.basename(old_img["file_name"])
+    old_filepath = os.path.join(old_img_dir, "images", old_file_name)
+    new_img["id"] = new_img_id
+    new_filepath = os.path.join(new_img_dir, "images", f"{new_img['id']}.jpg")
+    shutil.copy(old_filepath, new_filepath)
+
+    new_img["file_name"] = f"{new_img['id']}.jpg"
+    logging.debug(f"Image entry updated, is now {new_img}")
+    return new_img
 
 
-def update_annotation(
-    start_image_id: int, start_annotation_id: int, annotation: Dict,
-) -> Dict:
+def update_annotation(new_img_id: int, new_annotation_id: int, old_ann: Dict,) -> Dict:
     """
-    Offsets the provided annotation's ID by "start_annotation_id" and the image ID by "start_image_id".
+    Updates the provided annotation's ID to "new_annotation_id" and the image ID to "new_img_id".
     """
-    logging.debug(f"Updating annotation entry: {annotation}.")
-    logging.debug(
-        f"Image offset = {start_image_id}, annotation offset = {start_annotation_id}."
-    )
-    annotation["id"] += start_annotation_id
-    annotation["image_id"] += start_image_id
-    logging.debug(f"Annotation entry updated, is now {annotation}")
-    return annotation
+    logging.debug(f"Updating annotation entry: {old_ann}.")
+    logging.debug(f"Image ID = {new_img_id}, annotation offset = {new_annotation_id}.")
+    new_ann = copy.deepcopy(old_ann)
+    new_ann["id"] = new_annotation_id
+    new_ann["image_id"] = new_img_id
+    logging.debug(f"Annotation entry updated, is now {new_ann}")
+    return new_ann
 
 
 def assert_categories_are_equal(a_cats: Dict, b_cats: Dict):
@@ -85,9 +77,35 @@ def assert_categories_are_equal(a_cats: Dict, b_cats: Dict):
         ), f"Differing categories detected: ({a_cat_key} -> {a_cat_name} != {b_cat_key} -> {b_cat_name})"
 
 
+def setup_ax(coco: COCO, coco_img_dir: str, img: Dict, ax):
+    file_name = os.path.basename(img["file_name"])
+    file_path = os.path.join(coco_img_dir, "images", file_name)
+    print("Showing", file_path)
+    im = Image.open(file_path)
+    ax.imshow(im)
+    corresponding_anns = coco.imgToAnns[img["id"]]
+    for annotation in corresponding_anns:
+        add_annotation(ax, annotation)
+
+
+def verify_successful_transfer(
+    coco_a: COCO,
+    coco_a_img_dir: str,
+    old_img: Dict,
+    coco_b: COCO,
+    coco_b_img_dir: str,
+    new_img: Dict,
+):
+    fig, (ax, ax2) = plt.subplots(2, figsize=(24, 16))
+    setup_ax(coco_a, coco_a_img_dir, old_img, ax)
+    setup_ax(coco_b, coco_b_img_dir, new_img, ax2)
+    fig.show()
+    plt.show()
+
+
 def merge_datasets(
     coco_tuple_a: Tuple[COCO, str], coco_tuple_b: Tuple[COCO, str]
-) -> COCO:
+) -> Tuple[COCO, str]:
     """
     Merges coco_tuple_a's images and annotations into coco_tuple_b.
     """
@@ -100,30 +118,25 @@ def merge_datasets(
 
     assert_categories_are_equal(coco_a.cats, coco_b.cats)
 
-    # We're merging coco_a into coco_b, so how many annotations/images are in coco_b?
-    num_imgs = len(coco_b.imgs)
-    num_anns = len(coco_b.anns)
-
     # Append images in coco_a to coco_b
-    img_ids = coco_a.imgs.keys()
-    images = coco_a.loadImgs(ids=img_ids)
-    images = map(
-        lambda x: update_image(num_imgs, coco_a_img_dir, coco_b_img_dir, x), images
-    )
-    coco_b.dataset["images"] += images
-    logging.debug(f"Images merged successfully.")
+    imgs = coco_a.imgs.values()
+    for img in imgs:
+        new_img_id = len(coco_b.dataset["images"])
+        corresponding_anns = coco_a.imgToAnns[img["id"]]
+        new_img = copy_image(new_img_id, coco_a_img_dir, coco_b_img_dir, img)
+        for ann in corresponding_anns:
+            new_ann_id = len(coco_b.dataset["annotations"])
+            updated_ann = update_annotation(new_img_id, new_ann_id, ann)
+            coco_b.dataset["annotations"].append(updated_ann)
+        coco_b.dataset["images"].append(new_img)
+        coco_b.createIndex()
+        # verify_successful_transfer(
+        #     coco_a, coco_a_img_dir, img, coco_b, coco_b_img_dir, new_img
+        # )
+        # clear = lambda: os.system("clear")
+        # clear()
 
-    # Append annotations in min_coco to max_coco
-    ann_ids = coco_a.anns.keys()
-    annotations = coco_a.loadAnns(ids=ann_ids)
-    annotations = list(
-        map(lambda x: update_annotation(num_imgs, num_anns, x), annotations,)
-    )
-    coco_b.dataset["annotations"] += annotations
-    logging.debug(f"Annotations merged succesfully.")
-    coco_b.createIndex()
-
-    return coco_b
+    return coco_b, coco_b_img_dir
 
 
 def main(dataset_paths: List[str]):
@@ -134,8 +147,7 @@ def main(dataset_paths: List[str]):
 
     zipped = sorted(zip(datasets, dataset_paths), key=lambda x: len(x[0].imgs))
 
-    mega_dataset: COCO = functools.reduce(merge_datasets, zipped)
-    mega_dataset_path: str = zipped[-1][-1]
+    mega_dataset, mega_dataset_path = functools.reduce(merge_datasets, zipped)
 
     mega_dataset_annotation_filepath = os.path.join(
         mega_dataset_path, "annotations", "instances_default.json"

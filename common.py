@@ -2,7 +2,11 @@
 Common functionality for bootstrapping.
 """
 import json
+import os
 from typing import NewType, Tuple
+from matplotlib import patches
+
+from pycocotools.coco import COCO
 
 Point = NewType("Point", Tuple[float, float])
 
@@ -50,3 +54,24 @@ def load_coco_data(annotation_path: str):
     categories = coco_data["categories"]
     annotations = coco_data["annotations"]
     return licenses, images, info, categories, annotations
+
+def load_dataset(dataset_path: str) -> COCO:
+    """
+    Loads a COCO dataset from a specific folder. Expects folder to be similar to:
+    <dir>/annotations/instances_default.json
+    <dir>/images/
+    """
+    annotation_filepath = os.path.join(
+        dataset_path, "annotations", "instances_default.json"
+    )
+    return COCO(annotation_filepath)
+
+def add_annotation(ax, annotation) -> None:
+    [min_x, min_y, width, height] = annotation["bbox"]
+    category_id = annotation["category_id"]
+
+    rect = patches.Rectangle(
+        (min_x, min_y), width, height, linewidth=1, edgecolor="g", facecolor="none"
+    )
+    ax.add_patch(rect)
+    ax.text(min_x, min_y, f"{category_id}", c="g")
