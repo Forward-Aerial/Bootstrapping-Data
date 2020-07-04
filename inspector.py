@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 
 from matplotlib import patches
 from matplotlib import pyplot as plt
@@ -14,7 +15,8 @@ def main(dataset_path: str):
 
     
     image_dir = os.path.join(dataset_path, "images")
-    for img in dataset.loadImgs(dataset.imgs.keys()):
+    imgs = random.choices(dataset.loadImgs(dataset.imgs.keys()), k=50)
+    for img in imgs:
         print(img["file_name"])
         file_name = os.path.basename(img["file_name"])
         file_path = os.path.join(image_dir, file_name)
@@ -24,7 +26,9 @@ def main(dataset_path: str):
         corresponding_anns = dataset.imgToAnns[img["id"]]
         print("Corresponding annotations =", corresponding_anns)
         for annotation in corresponding_anns:
-            add_annotation(fig, ax, annotation)
+            readable_name = dataset.loadCats(ids=annotation["category_id"])[0]["name"]
+            annotation["category_id"] = readable_name
+            add_annotation(ax, annotation)
         fig.show()
         plt.waitforbuttonpress()
         plt.close(fig)
