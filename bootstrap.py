@@ -115,8 +115,13 @@ def upload_to_cvat(
     create_task_response = requests.post(
         create_task_url, json=create_task_body, auth=(username, passwd)
     )
-    assert create_task_response.ok
-    print(f"Task {task_name} was created successfully. Uploading images...")
+    try:
+        assert create_task_response.ok
+        print(f"Task {task_name} was created successfully. Uploading images...")
+    except AssertionError:
+        print(create_task_response.content)
+        print(f"Error creating task {task_name}. Exiting.")
+        return
 
     create_task_json = create_task_response.json()
     new_task_url = create_task_json["url"]
@@ -135,10 +140,17 @@ def upload_to_cvat(
         auth=(username, passwd),
         files=files,
     )
-    assert create_task_data_response.ok
-    print(
-        f"{len(image_files)} images uploaded to {task_name}. Adding annotations after {TIME_TO_SLEEP_AFTER_UPLOAD} seconds for server to synchronize..."
-    )
+
+    try:
+        assert create_task_data_response.ok
+        print(
+            f"{len(image_files)} images uploaded to {task_name}. Adding annotations after {TIME_TO_SLEEP_AFTER_UPLOAD} seconds for server to synchronize..."
+        )
+    except AssertionError:
+        print(create_task_response.content)
+        print(f"Error uploading images to task {task_name}. Exiting.")
+        return
+
     time.sleep(TIME_TO_SLEEP_AFTER_UPLOAD)
 
     upload_annotations_url = new_task_url + "/annotations?format=COCO 1.0"
@@ -149,8 +161,12 @@ def upload_to_cvat(
     upload_annotations_response = requests.put(
         upload_annotations_url, files=upload_annotations_body, auth=(username, passwd)
     )
-    print(upload_annotations_response.text)
-    assert upload_annotations_response.ok
+    try:
+        assert upload_annotations_response.ok
+        print(f"Annotations uploaded to task {task_name}.")
+    except AssertionError:
+        print(f"Error uploading annotations to task {task_name}. Exiting.")
+        return
 
 
 def bootstrap(
@@ -166,7 +182,10 @@ def bootstrap(
     """
     new_image_dir = move_images(root_dir)
     image_files = list(glob.iglob(f"{new_image_dir}/*"))
-    image_files = sorted([(int(x.split("/")[-1].split(".")[0]), x) for x in image_files], key=lambda x: x[0])
+    image_files = sorted(
+        [(int(x.split("/")[-1].split(".")[0]), x) for x in image_files],
+        key=lambda x: x[0],
+    )
     _, image_files = zip(*image_files)
     to_tensor = torchvision.transforms.ToTensor()
     annotation_id = 0
@@ -251,11 +270,12 @@ if __name__ == "__main__":
         description="Uses the provided Faster-RCNN model to automatically generate bounding boxes for Smash Bros. characters."
     )
     parser.add_argument(
-        "image_dir", type=str, help="The directory containing images to analyze."
-    )
-    parser.add_argument(
         "model_path", type=str, help="The path to the F-RCNN model file."
     )
+    parser.add_argument(
+        "image_dirs", type=str, help="The directory containing images to analyze.", nargs='+'
+    )
+
     parser.add_argument(
         "--certainty",
         type=float,
@@ -275,10 +295,11 @@ if __name__ == "__main__":
         help="Whether to visualize predictions and output annotations.",
     )
     args = parser.parse_args()
-    bootstrap(
-        args.image_dir,
-        args.model_path,
-        args.certainty,
-        args.template_location,
-        args.debug,
-    )
+    for image_dir in args.image_dirs:
+        bootstrap(
+            image_dir,
+            args.model_path,
+            args.certainty,
+            args.template_location,
+            args.debug,
+        )

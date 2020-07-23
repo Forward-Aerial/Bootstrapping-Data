@@ -27,7 +27,8 @@ def main(dataset_path: str):
         print("Corresponding annotations =", corresponding_anns)
         for annotation in corresponding_anns:
             readable_name = dataset.loadCats(ids=annotation["category_id"])[0]["name"]
-            annotation["category_id"] = readable_name
+            # annotation["category_id"] = readable_name
+            print(annotation["category_id"], "=", readable_name)
             add_annotation(ax, annotation)
         fig.show()
         plt.waitforbuttonpress()
