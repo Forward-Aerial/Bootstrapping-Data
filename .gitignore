@@ -8,6 +8,7 @@ result_imgs/
 vision/
 *.pytorch
 *.pt
+templates
 
 ### PyCharm ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio and WebStorm

@@ -2,17 +2,22 @@ import argparse
 import getpass
 import glob
 import json
+import istarmap
+from multiprocessing import Pool
 import os
 import time
-from typing import Dict, List, Optional
+from collections import namedtuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+import pandas as pd
 import requests
+import tqdm
 from matplotlib import patches
 from matplotlib import pyplot as plt
 
-from common import load_coco_data, load_dataset, minpt_wh_to_points, area
+from common import area, load_coco_data, load_dataset, minpt_wh_to_points
 
 DEFAULT_TEMPLATE_LOCATION = "template.json"
 
@@ -68,7 +73,7 @@ def visualize_cv2_prediction(
 def construct_annotation(
     image_id: int, annotation_id: int, box: List[int], label: int
 ) -> Optional[Dict]:
-    [min_x, min_y, max_x, max_y] = box.tolist()
+    [min_x, min_y, max_x, max_y] = box
     width = max_x - min_x
     height = max_y - min_y
     minpt_wh = (min_x, min_y, width, height)
@@ -79,7 +84,7 @@ def construct_annotation(
         "iscrowd": 0,
         "image_id": image_id,
         "bbox": [*minpt_wh],
-        "category_id": label.item(),
+        "category_id": label,
         "segmentation": [points],
         "id": annotation_id,
         "area": area(minpt_wh),
@@ -157,6 +162,29 @@ def upload_to_cvat(
         return
 
 
+# args: Tuple[np.ndarray, str, np.ndarray, int, float]
+def parallel_template_matching(
+    source_image_grayscale: np.ndarray,
+    source_filepath: str,
+    template_image: np.ndarray,
+    category_id: int,
+    certainty: float,
+):
+    boxes = []
+    labels = []
+    scores = []
+    res = cv2.matchTemplate(
+        source_image_grayscale, template_image, cv2.TM_CCOEFF_NORMED
+    )
+    loc = np.where(res >= certainty)
+    height, width = template_image.shape
+    for pt in zip(*loc[::-1]):
+        boxes.append([pt[0], pt[1], pt[0] + width, pt[1] + height])
+        labels.append(category_id)
+        scores.append(certainty)
+    return source_filepath, (width, height), boxes, labels, scores
+
+
 def bootstrap(
     root_dir: str,
     known_characters: List[int],
@@ -169,62 +197,63 @@ def bootstrap(
     Annotations will be stored in <image_dir>/annotations.
     """
     print("Debug is", debug)
+    print("Known characters is", known_characters)
+    templates = []
+    for category_id in known_characters:
+        for template_img_path in glob.iglob(
+            f"{os.path.join(template_location, str(category_id))}/*"
+        ):
+            template = cv2.imread(template_img_path, 0)
+            templates.append((category_id, template))
     new_image_dir = move_images(root_dir)
     image_files = list(glob.iglob(f"{new_image_dir}/*"))
     image_files = sorted(
-        [(int(x.split("/")[-1].split(".")[0]), x) for x in image_files],
+        [(int(os.path.basename(x).split(".")[0]), x) for x in image_files],
         key=lambda x: x[0],
     )
     _, image_files = zip(*image_files)
-    annotation_id = 0
-    images = []
-    annotations = []
+    tasks = []
     for image_file in image_files:
         image_id = int(os.path.basename(image_file).split(".")[0])
         img_bgr = cv2.imread(image_file)
         img_grayscale = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-        boxes = []
-        labels = []
-        scores = []
-        for category_id in known_characters:
-            print(f"Matching against character {category_id}")
-            for template_img_path in glob.iglob(
-                f"{os.path.join(template_location, str(category_id))}/*"
-            ):
-                template = cv2.imread(template_img_path, 0)
-                width, height = template.shape[::-1]
-                res = cv2.matchTemplate(img_grayscale, template, cv2.TM_CCOEFF_NORMED)
-                loc = np.where(res >= certainty)
-                for pt in zip(*loc[::-1]):
-                    boxes.append([pt[0], pt[1], pt[0] + width, pt[1] + height])
-                    labels.append(category_id)
-                    scores.append(1)
-        img_width, img_height, _ = img_bgr.shape
-        images.append(
-            {
-                "date_captured": 0,
-                "flickr_url": 0,
-                "height": img_height,
-                "width": img_width,
-                "id": image_id,
-                "license": 0,
-                "file_name": f"{image_id}.jpg",
-            }
-        )
-        if debug:
-            print("BOXES =", boxes)
-            print("LABELS =", labels)
-            print("SCORES = ", scores)
-            visualize_cv2_prediction(img_bgr, boxes, labels, scores, certainty)
-            fig, ax = plt.subplots(1, figsize=(12, 8))
-            ax.imshow(img_bgr)
-        for box, label, score in zip(boxes, labels, scores):
-            annotation = construct_annotation(image_id, annotation_id, box, label)
-            if annotation is None:
-                continue
-            annotations.append(annotation)
-            annotation_id += 1
-
+        for category_id, template in templates:
+            tasks.append((img_grayscale, image_file, template, category_id, certainty))
+    print(f"{len(tasks)} tasks to complete.")
+    with Pool(processes=1) as pool:
+        print(f"Pool created with {pool._processes} processes.")
+        annotation_id = 0
+        images = []
+        annotations = []
+        for filepath, (width, height), boxes, labels, scores in tqdm.tqdm(
+            pool.istarmap(parallel_template_matching, tasks), total=len(tasks)
+        ):
+            image_id = int(os.path.basename(filepath).split(".")[0])
+            images.append(
+                {
+                    "date_captured": 0,
+                    "flickr_url": 0,
+                    "height": height,
+                    "width": width,
+                    "id": image_id,
+                    "license": 0,
+                    "file_name": f"{image_id}.jpg",
+                }
+            )
+            if debug:
+                print("BOXES =", boxes)
+                print("LABELS =", labels)
+                print("SCORES = ", scores)
+                visualize_cv2_prediction(img_bgr, boxes, labels, scores, certainty)
+                fig, ax = plt.subplots(1, figsize=(12, 8))
+                ax.imshow(img_bgr)
+            for box, label, score in zip(boxes, labels, scores):
+                annotation = construct_annotation(image_id, annotation_id, box, label)
+                if annotation is None:
+                    continue
+                annotations.append(annotation)
+                annotation_id += 1
+    print("Dataset built")
     licenses, _, info, categories, _ = load_coco_data(template_location)
 
     new_annotation_dir = os.path.join(root_dir, "annotations")
@@ -278,7 +307,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--certainty",
         type=float,
-        default=0.25,
+        default=0.7,
         help="Discard bounding boxes under this certainty.",
     )
     parser.add_argument(
