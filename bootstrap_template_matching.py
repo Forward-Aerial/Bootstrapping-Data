@@ -2,21 +2,19 @@ import argparse
 import getpass
 import glob
 import json
-import istarmap
-from multiprocessing import Pool, cpu_count
 import os
 import time
-from collections import namedtuple
+from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-import pandas as pd
 import requests
 import tqdm
 from matplotlib import patches
 from matplotlib import pyplot as plt
 
+import istarmap
 from common import area, load_coco_data, load_dataset, minpt_wh_to_points
 
 DEFAULT_TEMPLATE_LOCATION = "template.json"
@@ -173,6 +171,8 @@ def parallel_template_matching(
     boxes = []
     labels = []
     scores = []
+    gpu_frame = cv2.cuda_GpuMat()
+    gpu_frame.upload(source_image_grayscale)
     res = cv2.matchTemplate(
         source_image_grayscale, template_image, cv2.TM_CCOEFF_NORMED
     )
