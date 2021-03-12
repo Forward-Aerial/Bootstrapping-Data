@@ -3,7 +3,7 @@ import getpass
 import glob
 import json
 import istarmap
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 import os
 import time
 from collections import namedtuple
@@ -220,7 +220,7 @@ def bootstrap(
         for category_id, template in templates:
             tasks.append((img_grayscale, image_file, template, category_id, certainty))
     print(f"{len(tasks)} tasks to complete.")
-    with Pool(processes=1) as pool:
+    with Pool(processes=cpu_count()) as pool:
         print(f"Pool created with {pool._processes} processes.")
         annotation_id = 0
         images = []
