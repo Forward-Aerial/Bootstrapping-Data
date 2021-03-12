@@ -15,6 +15,7 @@ from matplotlib import patches
 from matplotlib import pyplot as plt
 from PIL import Image
 from pycocotools.coco import COCO
+import tqdm
 
 from common import area, load_coco_data, minpt_wh_to_points
 
@@ -192,7 +193,7 @@ def bootstrap(
     images = []
     annotations = []
     model: torchvision.models.detection.FasterRCNN = torch.load(model_path)
-    for image_file in image_files:
+    for image_file in tqdm.tqdm(image_files, total=len(image_files)):
         image_id = int(os.path.basename(image_file).split(".")[0])
         print(image_file, image_id)
         img = Image.open(image_file)
