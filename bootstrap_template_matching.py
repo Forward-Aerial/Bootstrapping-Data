@@ -171,8 +171,6 @@ def parallel_template_matching(
     boxes = []
     labels = []
     scores = []
-    gpu_frame = cv2.cuda_GpuMat()
-    gpu_frame.upload(source_image_grayscale)
     res = cv2.matchTemplate(
         source_image_grayscale, template_image, cv2.TM_CCOEFF_NORMED
     )
