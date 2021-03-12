@@ -9,6 +9,7 @@ vision/
 *.pytorch
 *.pt
 templates
+env
 
 ### PyCharm ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio and WebStorm
